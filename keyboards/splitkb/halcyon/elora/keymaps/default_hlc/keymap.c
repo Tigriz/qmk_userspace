@@ -3,6 +3,19 @@
 
 #include QMK_KEYBOARD_H
 
+// Pointing modes of the Halcyon Cirque module: trackpad, Lenovo-style
+// trackpoint, HID gamepad joystick. Only available on a trackpad build, the
+// keys are inert on any other module.
+#ifdef HLC_CIRQUE_TRACKPAD
+#    include "hlc_cirque_trackpad/hlc_cirque_trackpad.h"
+#else
+#    define PM_NEXT KC_NO
+#    define PM_PAD KC_NO
+#    define PM_TPT KC_NO
+#    define PM_JOY KC_NO
+#    define PM_JCTR KC_NO
+#endif
+
 enum layers {
     _QWERTY = 0,
     _DVORAK,
@@ -181,10 +194,10 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     ),
 
 /*
- * Adjust Layer: Default layer settings, RGB
+ * Adjust Layer: Default layer settings, RGB, pointing mode
  *
  * ,-------------------------------------------.                              ,-------------------------------------------.
- * |        |      |      |      |      |      |                              |      |      |      |      |      |        |
+ * |        | Pad  |TrkPnt| Joy  |JoyCtr| Next |                              |      |      |      |      |      |        |
  * |--------+------+------+------+------+------|                              |------+------+------+------+------+--------|
  * |        |      |      |QWERTY|      |      |                              |      |      |      |      |      |        |
  * |--------+------+------+------+------+------|                              |------+------+------+------+------+--------|
@@ -197,7 +210,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
  *                        `----------------------------------'  `----------------------------------'
  */
     [_ADJUST] = LAYOUT(
-      _______, _______, _______, _______, _______, _______,                                    _______, _______, _______, _______, _______, _______,
+      _______, PM_PAD , PM_TPT , PM_JOY , PM_JCTR, PM_NEXT,                                    _______, _______, _______, _______, _______, _______,
       _______, _______, _______, QWERTY , _______, _______,                                    _______, _______, _______, _______, _______, _______,
       _______, _______, _______, DVORAK , _______, _______,                                    RM_TOGG, RM_SATU, RM_HUEU, RM_VALU, RM_NEXT, _______,
       _______, _______, _______, COLEMAK, _______, _______,_______, _______, _______, _______, _______, RM_SATD, RM_HUED, RM_VALD, RM_PREV, _______,
@@ -241,6 +254,16 @@ const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
     [6] = { ENCODER_CCW_CW(_______, _______),  ENCODER_CCW_CW(_______, _______),  ENCODER_CCW_CW(_______, _______),  ENCODER_CCW_CW(_______, _______)  },
 };
 #endif
+
+bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+#ifdef HLC_CIRQUE_TRACKPAD
+    if (!hlc_pointing_process_record(keycode, record)) {
+        return false;
+    }
+#endif
+
+    return true;
+}
 
 #if defined (HALCYON_ENABLE)
 const uint16_t left_halcyon_buttons[10][5] = {

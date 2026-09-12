@@ -242,6 +242,22 @@
             }
         ],
         [
+            "splitkb/halcyon/elora/rev2",
+            "default_hlc",
+            {
+                "HLC_CIRQUE_TRACKPAD": "1",
+                "TARGET": "splitkb_halcyon_elora_rev2_default_hlc_cirque_trackpad"
+            }
+        ],
+        [
+            "splitkb/halcyon/elora/rev2",
+            "default_hlc",
+            {
+                "HLC_TFT_DISPLAY": "1",
+                "TARGET": "splitkb_halcyon_elora_rev2_default_hlc_display"
+            }
+        ],
+        [
             "splitkb/halcyon/corne/rev2",
             "vial_hlc_legacy",
             {

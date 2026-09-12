@@ -5,7 +5,12 @@
 
 #define HALCYON_ENABLE
 
-#define SPLIT_TRANSACTION_IDS_KB MODULE_SYNC
+// Both halves run their own firmware, built for the module plugged into them,
+// but the split handshake XORs every transaction with NUM_TOTAL_TRANSACTIONS.
+// The two sides must therefore declare the exact same transactions, whatever
+// module they were built for, or they stop talking to each other entirely.
+// HLC_POINTING_SYNC carries the Cirque module's pointing mode to the other half.
+#define SPLIT_TRANSACTION_IDS_KB MODULE_SYNC, HLC_POINTING_SYNC
 
 #define SPLIT_POINTING_ENABLE
 #define POINTING_DEVICE_COMBINED

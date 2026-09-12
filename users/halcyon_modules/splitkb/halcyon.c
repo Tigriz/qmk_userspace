@@ -6,6 +6,9 @@
 #include "transactions.h"
 #include "split_util.h"
 #include "_wait.h"
+#ifdef HLC_CIRQUE_TRACKPAD
+#    include "hlc_cirque_trackpad/hlc_cirque_trackpad.h"
+#endif
 
 __attribute__((weak)) void module_suspend_power_down_kb(void);
 __attribute__((weak)) void module_suspend_wakeup_init_kb(void);
@@ -137,5 +140,13 @@ report_mouse_t pointing_device_task_combined_kb(report_mouse_t left_report, repo
         left_report.x = -x;
         left_report.y = -y;
     }
+#ifdef HLC_CIRQUE_TRACKPAD
+    // In joystick mode the module hides its analog axes in the mouse report so
+    // they survive the trip from the slave half; unpack them here, on the
+    // master, where the HID gamepad report is sent from.
+    left_report  = hlc_pointing_decode_report(left_report);
+    right_report = hlc_pointing_decode_report(right_report);
+#endif
+
     return pointing_device_task_combined_user(left_report, right_report);
 }
