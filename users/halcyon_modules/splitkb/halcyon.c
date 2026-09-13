@@ -6,6 +6,7 @@
 #include "transactions.h"
 #include "split_util.h"
 #include "_wait.h"
+#include "hlc_pointing_mode.h"
 #ifdef HLC_CIRQUE_TRACKPAD
 #    include "hlc_cirque_trackpad/hlc_cirque_trackpad.h"
 #endif
@@ -87,6 +88,10 @@ void keyboard_post_init_kb(void) {
     // Register module sync split transaction
     transaction_register_rpc(MODULE_SYNC, module_sync_slave_handler);
 
+    // Register the pointing mode transaction: both halves need it, whichever
+    // module they were built for
+    hlc_pointing_mode_init();
+
     // Do any post init for modules
     module_post_init_kb();
 
@@ -125,6 +130,9 @@ void housekeeping_task_kb(void) {
             backlight_suspend();
         }
     }
+
+    // Push the pointing mode to the other half when it changes
+    hlc_pointing_mode_task();
 
     module_housekeeping_task_kb();
 

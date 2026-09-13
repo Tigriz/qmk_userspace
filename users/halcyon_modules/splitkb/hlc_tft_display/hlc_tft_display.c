@@ -6,9 +6,13 @@
 
 #include "hardware/structs/rosc.h"
 
+#include "hlc_pointing_mode.h"
+
 // Fonts mono2
-#include "graphics/fonts/Retron2000-27.qff.h"
-#include "graphics/fonts/Retron2000-underline-27.qff.h"
+#include "graphics/fonts/gohufont.qff.h"
+
+// Background artwork, 135x240 rgb565
+#include "graphics/sayaka.qgf.h"
 
 // Numbers mono2
 #include "graphics/numbers/0.qgf.h"
@@ -23,13 +27,12 @@
 #include "graphics/numbers/9.qgf.h"
 #include "graphics/numbers/undef.qgf.h"
 
-static const char *caps =        "Caps";
-static const char *num =         "Num";
-static const char *scroll =      "Scroll";
+static const char *caps =        "CAPS";
+static const char *num =         "NUM";
+static const char *scroll =      "SCRL";
 
-static painter_font_handle_t Retron27;
-static painter_font_handle_t Retron27_underline;
-static painter_image_handle_t layer_number;
+static painter_font_handle_t  status_font;
+static painter_image_handle_t background;
 
 static uint8_t lcd_surface_fb[SURFACE_REQUIRED_BUFFER_BYTE_SIZE(135, 240, 16)];
 
@@ -178,69 +181,109 @@ void add_cell_cluster() {
     }
 }
 
-void update_display(void) {
-    static bool first_run_led = false;
-    static bool first_run_layer = false;
+// Layout of the status block at the bottom of the artwork. Everything is
+// expressed in line heights, so swapping the font for a taller or shorter one
+// rearranges the block instead of breaking it.
+#define STATUS_LINES 3
+#define STATUS_PAD 3
+#define STATUS_LEFT 4
 
-    if( first_run_layer == false) {
-        // Load fonts
-        Retron27 = qp_load_font_mem(font_Retron2000_27);
-        Retron27_underline = qp_load_font_mem(font_Retron2000_underline_27);
+static uint16_t status_line_y(uint8_t line) {
+    return LCD_HEIGHT - (STATUS_LINES * status_font->line_height + 2 * STATUS_PAD) + STATUS_PAD + line * status_font->line_height;
+}
+
+// Text is drawn opaque, so a shorter string would leave the tail of the
+// previous one behind: wipe the line first.
+static void clear_status_line(uint8_t line) {
+    uint16_t top = status_line_y(line);
+
+    qp_rect(lcd_surface, 0, top, LCD_WIDTH - 1, top + status_font->line_height - 1, HSV_BLACK, true);
+}
+
+void update_display(void) {
+    static bool                drawn     = false;
+    static hlc_pointing_mode_t last_mode = HLC_POINTING_MODE_COUNT;
+
+    if (!drawn) {
+        status_font = qp_load_font_mem(font_gohufont);
+        background  = qp_load_image_mem(gfx_sayaka);
+
+        if (!status_font) {
+            return;
+        }
+
+        qp_drawimage(lcd_surface, 0, 0, background);
+
+        // Backdrop for the status block, so the text stays readable whatever
+        // the artwork does behind it.
+        qp_rect(lcd_surface, 0, status_line_y(0) - STATUS_PAD, LCD_WIDTH - 1, LCD_HEIGHT - 1, HSV_BLACK, true);
     }
 
-    if(last_led_usb_state.raw != host_keyboard_led_state().raw || first_run_led == false) {
-        led_t led_usb_state = host_keyboard_led_state();
+    // Line 0: active layer
+    if (last_layer_state != layer_state || !drawn) {
+        static char layer_text[] = "LAYER 0";
+        uint8_t     layer        = get_highest_layer(layer_state | default_layer_state);
 
-        led_usb_state.caps_lock   ? qp_drawtext_recolor(lcd_surface, 5, LCD_HEIGHT - Retron27->line_height * 3 - 15, Retron27_underline, caps,   HSV_CAPS_ON,   HSV_BLACK) : qp_drawtext_recolor(lcd_surface, 5, LCD_HEIGHT - Retron27->line_height * 3 - 15, Retron27, caps,   HSV_CAPS_OFF,   HSV_BLACK);
-        led_usb_state.num_lock    ? qp_drawtext_recolor(lcd_surface, 5, LCD_HEIGHT - Retron27->line_height * 2 - 10, Retron27_underline, num,    HSV_NUM_ON,    HSV_BLACK) : qp_drawtext_recolor(lcd_surface, 5, LCD_HEIGHT - Retron27->line_height * 2 - 10, Retron27, num,    HSV_NUM_OFF,    HSV_BLACK);
-        led_usb_state.scroll_lock ? qp_drawtext_recolor(lcd_surface, 5, LCD_HEIGHT - Retron27->line_height - 5,      Retron27_underline, scroll, HSV_SCROLL_ON, HSV_BLACK) : qp_drawtext_recolor(lcd_surface, 5, LCD_HEIGHT - Retron27->line_height - 5,      Retron27, scroll, HSV_SCROLL_OFF, HSV_BLACK);
+        layer_text[6] = '0' + (layer % 10);
+
+        clear_status_line(0);
+        switch (layer) {
+            case 0: qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(0), status_font, layer_text, HSV_LAYER_0, HSV_BLACK); break;
+            case 1: qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(0), status_font, layer_text, HSV_LAYER_1, HSV_BLACK); break;
+            case 2: qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(0), status_font, layer_text, HSV_LAYER_2, HSV_BLACK); break;
+            case 3: qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(0), status_font, layer_text, HSV_LAYER_3, HSV_BLACK); break;
+            case 4: qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(0), status_font, layer_text, HSV_LAYER_4, HSV_BLACK); break;
+            case 5: qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(0), status_font, layer_text, HSV_LAYER_5, HSV_BLACK); break;
+            case 6: qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(0), status_font, layer_text, HSV_LAYER_6, HSV_BLACK); break;
+            case 7: qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(0), status_font, layer_text, HSV_LAYER_7, HSV_BLACK); break;
+            default: qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(0), status_font, layer_text, HSV_LAYER_UNDEF, HSV_BLACK); break;
+        }
+
+        last_layer_state = layer_state;
+    }
+
+    // Line 1: what the Cirque module currently behaves as. The mode is owned by
+    // the master and synced over, so this works from the half without the pad.
+    if (last_mode != hlc_pointing_mode() || !drawn) {
+        last_mode = hlc_pointing_mode();
+
+        clear_status_line(1);
+        switch (last_mode) {
+            case HLC_POINTING_TRACKPOINT:
+                qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(1), status_font, hlc_pointing_mode_name(), HSV_MODE_TRACKPOINT, HSV_BLACK);
+                break;
+            case HLC_POINTING_JOYSTICK:
+                qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(1), status_font, hlc_pointing_mode_name(), HSV_MODE_JOYSTICK, HSV_BLACK);
+                break;
+            default:
+                qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(1), status_font, hlc_pointing_mode_name(), HSV_MODE_TRACKPAD, HSV_BLACK);
+                break;
+        }
+    }
+
+    // Line 2: the three lock keys, side by side instead of stacked
+    if (last_led_usb_state.raw != host_keyboard_led_state().raw || !drawn) {
+        led_t    led_usb_state = host_keyboard_led_state();
+        uint16_t y             = status_line_y(2);
+
+        // Spread the three labels across the width from their actual size, so a
+        // wider font pushes them apart instead of off the panel.
+        int16_t x_caps = STATUS_LEFT;
+        int16_t x_num  = (LCD_WIDTH - qp_textwidth(status_font, num)) / 2;
+        int16_t x_scrl = LCD_WIDTH - STATUS_LEFT - qp_textwidth(status_font, scroll);
+
+        clear_status_line(2);
+        led_usb_state.caps_lock   ? qp_drawtext_recolor(lcd_surface, x_caps, y, status_font, caps, HSV_CAPS_ON, HSV_BLACK)
+                                  : qp_drawtext_recolor(lcd_surface, x_caps, y, status_font, caps, HSV_CAPS_OFF, HSV_BLACK);
+        led_usb_state.num_lock    ? qp_drawtext_recolor(lcd_surface, x_num, y, status_font, num, HSV_NUM_ON, HSV_BLACK)
+                                  : qp_drawtext_recolor(lcd_surface, x_num, y, status_font, num, HSV_NUM_OFF, HSV_BLACK);
+        led_usb_state.scroll_lock ? qp_drawtext_recolor(lcd_surface, x_scrl, y, status_font, scroll, HSV_SCROLL_ON, HSV_BLACK)
+                                  : qp_drawtext_recolor(lcd_surface, x_scrl, y, status_font, scroll, HSV_SCROLL_OFF, HSV_BLACK);
 
         last_led_usb_state = led_usb_state;
-        first_run_led = true;
     }
 
-    if(last_layer_state != layer_state || first_run_layer == false) {
-        switch (get_highest_layer(layer_state|default_layer_state)) {
-        case 0:
-            layer_number = qp_load_image_mem(gfx_0);
-            qp_drawimage_recolor(lcd_surface, 5, 5, layer_number, HSV_LAYER_0, HSV_BLACK);
-            break;
-        case 1:
-            layer_number = qp_load_image_mem(gfx_1);
-            qp_drawimage_recolor(lcd_surface, 5, 5, layer_number, HSV_LAYER_1, HSV_BLACK);
-            break;
-        case 2:
-            layer_number = qp_load_image_mem(gfx_2);
-            qp_drawimage_recolor(lcd_surface, 5, 5, layer_number, HSV_LAYER_2, HSV_BLACK);
-            break;
-        case 3:
-            layer_number = qp_load_image_mem(gfx_3);
-            qp_drawimage_recolor(lcd_surface, 5, 5, layer_number, HSV_LAYER_3, HSV_BLACK);
-            break;
-        case 4:
-            layer_number = qp_load_image_mem(gfx_4);
-            qp_drawimage_recolor(lcd_surface, 5, 5, layer_number, HSV_LAYER_4, HSV_BLACK);
-            break;
-        case 5:
-            layer_number = qp_load_image_mem(gfx_5);
-            qp_drawimage_recolor(lcd_surface, 5, 5, layer_number, HSV_LAYER_5, HSV_BLACK);
-            break;
-        case 6:
-            layer_number = qp_load_image_mem(gfx_6);
-            qp_drawimage_recolor(lcd_surface, 5, 5, layer_number, HSV_LAYER_6, HSV_BLACK);
-            break;
-        case 7:
-            layer_number = qp_load_image_mem(gfx_7);
-            qp_drawimage_recolor(lcd_surface, 5, 5, layer_number, HSV_LAYER_7, HSV_BLACK);
-            break;
-        default:
-            layer_number = qp_load_image_mem(gfx_undef);
-            qp_drawimage_recolor(lcd_surface, 5, 5, layer_number, HSV_LAYER_UNDEF, HSV_BLACK);
-        }
-        qp_close_image(layer_number);
-        last_layer_state = layer_state;
-        first_run_layer = true;
-    }
+    drawn = true;
 }
 
 // Called from halcyon.c

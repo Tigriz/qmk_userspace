@@ -12,6 +12,17 @@
 // HLC_POINTING_SYNC carries the Cirque module's pointing mode to the other half.
 #define SPLIT_TRANSACTION_IDS_KB MODULE_SYNC, HLC_POINTING_SYNC
 
+// Pointing mode state, shared by every module (see hlc_pointing_mode.h)
+#ifndef HLC_POINTING_MODE_DEFAULT
+#    define HLC_POINTING_MODE_DEFAULT HLC_POINTING_TRACKPAD
+#endif
+#ifndef HLC_JOYSTICK_CENTER_DEFAULT
+#    define HLC_JOYSTICK_CENTER_DEFAULT HLC_JOYSTICK_CENTER_PAD
+#endif
+#ifndef HLC_POINTING_SYNC_INTERVAL
+#    define HLC_POINTING_SYNC_INTERVAL 1000 // ms between mode refreshes to the other half
+#endif
+
 #define SPLIT_POINTING_ENABLE
 #define POINTING_DEVICE_COMBINED
 

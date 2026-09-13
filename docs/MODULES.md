@@ -32,7 +32,7 @@ There are some quirks when using Quantum Painter which we noticed while creating
 * Drawing a full screen image can give the keyboard noticeable lag. For startup this is okay but switching images every couple of seconds could become annoying.
 * This also applies for animations. Smaller size animations are fine, from testing the animations could take up around 30% of the screen and still have the keyboard be responsive but when having animations on the entire screen it can slow down the entire keyboard.
 * Using large images or animations can eat up the firmware size very quickly so be aware of that.
-* Our displays are 240*135 pixels.
+* Our displays are 240x135 pixel panels, but the module drives them in portrait: `LCD_WIDTH` is 135 and `LCD_HEIGHT` is 240. Full screen artwork is therefore 135 wide by 240 tall.
 
 You can also look in the `users/halcyon_modules/hlc_tft_display/` folder to see how we implemented the display code.
 
@@ -41,7 +41,7 @@ To load new fonts or images you will need to convert them using the [Quantum Pai
 
 ### Example: draw a picture on the second display
 
-First convert your 240*135 image to a QGF file:
+First convert your 135x240 image to a QGF file:
 `qmk painter-convert-graphics -f rgb565 -i my_image.png`
 
 Copy the generated files to your keymap.
@@ -174,7 +174,7 @@ In a `keymap.c`, include the module header and hand your `process_record_user()`
 
 ```c
 #ifdef HLC_CIRQUE_TRACKPAD
-#    include "hlc_cirque_trackpad/hlc_cirque_trackpad.h"
+#    include "hlc_pointing_mode.h"
 #else // keep the keycodes usable on builds without the trackpad module
 #    define PM_NEXT KC_NO
 #    define PM_PAD KC_NO
@@ -204,7 +204,9 @@ Keymaps without a `keymap.c` (json and Vial keymaps) get a default `process_reco
 | `USER03` | joystick |
 | `USER04` | joystick centering |
 
-`hlc_pointing_mode()` and `hlc_joystick_center()` return the current state, which is handy to show the mode on a display module.
+The mode itself, its keycodes and its split sync live in `users/halcyon_modules/splitkb/hlc_pointing_mode.h`, one level above the trackpad module, because every Halcyon firmware needs them: the half with the pad to pick its behaviour, the half with a display to show it, and either half to own it as the master. A file compiled into a single module could not do that, since the two halves run different builds.
+
+`hlc_pointing_mode()`, `hlc_pointing_mode_name()` and `hlc_joystick_center()` return the current state, which is what the display module uses to show the mode on screen.
 
 #### Joystick mode
 

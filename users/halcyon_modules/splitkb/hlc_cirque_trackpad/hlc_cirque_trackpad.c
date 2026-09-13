@@ -19,7 +19,6 @@
 #include QMK_KEYBOARD_H
 #include "hlc_cirque_trackpad/hlc_cirque_trackpad.h"
 #include "pointing_device.h"
-#include "transactions.h"
 #include "split_util.h"
 #include "timer.h"
 #ifdef JOYSTICK_ENABLE
@@ -35,9 +34,6 @@
 #endif
 
 // ---------------------------------------------------------------- state ----
-
-static hlc_pointing_mode_t   pointing_mode   = HLC_POINTING_MODE_DEFAULT;
-static hlc_joystick_center_t joystick_center = HLC_JOYSTICK_CENTER_DEFAULT;
 
 typedef struct {
     bool     touching;
@@ -57,6 +53,8 @@ static int32_t  touch_travel;     // largest distance from the landing point
 static uint32_t tap_click_start;  // when the click produced by a tap was pressed
 static bool     tap_click_active; // that click is still held
 static bool     trackpad_resync;  // drop the first trackpad delta after a mode change
+
+static void hlc_pointing_reset(void);
 
 // ----------------------------------------------------------- math bits ----
 
@@ -272,7 +270,7 @@ static report_mouse_t hlc_joystick_report(report_mouse_t mouse_report) {
 #    endif
 
     if (touch.touching) {
-        if (joystick_center == HLC_JOYSTICK_CENTER_TOUCH) {
+        if (hlc_joystick_center() == HLC_JOYSTICK_CENTER_TOUCH) {
             hlc_apply_curve(dx, dy, HLC_JOYSTICK_DEADZONE, HLC_JOYSTICK_TOUCH_RANGE, JOYSTICK_MAX_VALUE, HLC_JOYSTICK_CURVE, &ax, &ay);
         } else {
             hlc_apply_curve((int32_t)touch.x - (HLC_POINTING_SCALE / 2), (int32_t)touch.y - (HLC_POINTING_SCALE / 2), HLC_JOYSTICK_DEADZONE, HLC_JOYSTICK_RANGE, JOYSTICK_MAX_VALUE, HLC_JOYSTICK_CURVE, &ax, &ay);
@@ -313,7 +311,7 @@ report_mouse_t hlc_pointing_decode_report(report_mouse_t mouse_report) {
     // report from joystick mode can still sit in the shared buffer for a few
     // polls after a mode change. Dropping it here keeps a stale deflection from
     // sticking to the axes, which nothing would clear afterwards.
-    if (pointing_mode == HLC_POINTING_JOYSTICK) {
+    if (hlc_pointing_mode() == HLC_POINTING_JOYSTICK) {
 #ifdef JOYSTICK_ENABLE
         joystick_set_axis(HLC_JOYSTICK_AXIS_X, mouse_report.x);
         joystick_set_axis(HLC_JOYSTICK_AXIS_Y, mouse_report.y);
@@ -343,7 +341,7 @@ report_mouse_t hlc_pointing_decode_report(report_mouse_t mouse_report) {
 static report_mouse_t hlc_pointing_get_report(report_mouse_t mouse_report) {
     mouse_report.buttons &= ~(HLC_JOYSTICK_REPORT_MARKER | HLC_JOYSTICK_BUTTON_MARKER);
 
-    switch (pointing_mode) {
+    switch (hlc_pointing_mode()) {
         case HLC_POINTING_TRACKPOINT:
             return hlc_trackpoint_report(mouse_report);
 #ifdef JOYSTICK_ENABLE
@@ -367,14 +365,7 @@ static const pointing_device_driver_t hlc_pointing_driver = {
 
 extern const pointing_device_driver_t *pointing_device_driver;
 
-// ----------------------------------------------------------- mode state ----
-
-typedef struct {
-    uint8_t mode;
-    uint8_t center;
-} hlc_pointing_sync_t;
-
-static bool sync_dirty = true;
+// ------------------------------------------------------------ mode state ----
 
 static void hlc_pointing_reset(void) {
     touch.touching   = false;
@@ -386,142 +377,24 @@ static void hlc_pointing_reset(void) {
     trackpad_resync  = true;
 }
 
-hlc_pointing_mode_t hlc_pointing_mode(void) {
-    return pointing_mode;
-}
-
-void hlc_pointing_mode_set(hlc_pointing_mode_t mode) {
-    if (mode >= HLC_POINTING_MODE_COUNT || mode == pointing_mode) {
-        return;
-    }
-#ifndef JOYSTICK_ENABLE
-    if (mode == HLC_POINTING_JOYSTICK) {
-        return;
-    }
-#else
-    if (pointing_mode == HLC_POINTING_JOYSTICK) {
+// The mode itself lives in hlc_pointing_mode.c, which every module compiles;
+// here we only care about dropping whatever the previous mode had accumulated.
+void hlc_pointing_mode_changed_kb(hlc_pointing_mode_t mode) {
+#ifdef JOYSTICK_ENABLE
+    if (mode != HLC_POINTING_JOYSTICK) {
         hlc_joystick_release();
     }
 #endif
 
-    pointing_mode = mode;
     hlc_pointing_reset();
-    sync_dirty = true;
-}
-
-void hlc_pointing_mode_step(int8_t offset) {
-#ifdef JOYSTICK_ENABLE
-    const int8_t count = HLC_POINTING_MODE_COUNT;
-#else
-    const int8_t count = HLC_POINTING_MODE_COUNT - 1; // joystick compiled out
-#endif
-    int8_t next = ((int8_t)pointing_mode + offset) % count;
-
-    if (next < 0) {
-        next += count;
-    }
-    hlc_pointing_mode_set((hlc_pointing_mode_t)next);
-}
-
-hlc_joystick_center_t hlc_joystick_center(void) {
-    return joystick_center;
-}
-
-void hlc_joystick_center_set(hlc_joystick_center_t center) {
-    if (center == joystick_center) {
-        return;
-    }
-    joystick_center = center;
-    origin_valid    = false;
-    sync_dirty      = true;
-}
-
-void hlc_joystick_center_toggle(void) {
-    hlc_joystick_center_set(joystick_center == HLC_JOYSTICK_CENTER_PAD ? HLC_JOYSTICK_CENTER_TOUCH : HLC_JOYSTICK_CENTER_PAD);
-}
-
-// ------------------------------------------------------------ split sync ----
-
-static void hlc_pointing_sync_handler(uint8_t initiator2target_buffer_size, const void *initiator2target_buffer, uint8_t target2initiator_buffer_size, void *target2initiator_buffer) {
-    if (initiator2target_buffer_size != sizeof(hlc_pointing_sync_t)) {
-        return;
-    }
-
-    hlc_pointing_sync_t state;
-    memcpy(&state, initiator2target_buffer, sizeof(state));
-
-    joystick_center = (hlc_joystick_center_t)state.center;
-
-    if (state.mode != pointing_mode && state.mode < HLC_POINTING_MODE_COUNT) {
-        pointing_mode = (hlc_pointing_mode_t)state.mode;
-        hlc_pointing_reset();
-    }
-}
-
-static void hlc_pointing_sync_task(void) {
-    static uint32_t last_sync = 0;
-
-    if (!is_keyboard_master() || !is_transport_connected()) {
-        return;
-    }
-    if (!sync_dirty && timer_elapsed32(last_sync) < HLC_POINTING_SYNC_INTERVAL) {
-        return;
-    }
-
-    hlc_pointing_sync_t state = {.mode = (uint8_t)pointing_mode, .center = (uint8_t)joystick_center};
-
-    if (transaction_rpc_send(HLC_POINTING_SYNC, sizeof(state), &state)) {
-        sync_dirty = false;
-        last_sync  = timer_read32();
-    }
 }
 
 // ----------------------------------------------------------------- hooks ----
 
 void pointing_device_init_kb(void) {
-    transaction_register_rpc(HLC_POINTING_SYNC, hlc_pointing_sync_handler);
-
     // The stock cirque driver has already been initialised at this point; we
     // only take over the per-poll report generation.
     pointing_device_driver = &hlc_pointing_driver;
 
     hlc_pointing_reset();
-}
-
-report_mouse_t pointing_device_task_kb(report_mouse_t mouse_report) {
-    hlc_pointing_sync_task();
-
-    return pointing_device_task_user(mouse_report);
-}
-
-bool hlc_pointing_process_record(uint16_t keycode, keyrecord_t *record) {
-    if (!record->event.pressed) {
-        return true;
-    }
-
-    switch (keycode) {
-        case HLC_PMODE_NEXT:
-            hlc_pointing_mode_step(1);
-            return false;
-        case HLC_PMODE_PAD:
-            hlc_pointing_mode_set(HLC_POINTING_TRACKPAD);
-            return false;
-        case HLC_PMODE_TPT:
-            hlc_pointing_mode_set(HLC_POINTING_TRACKPOINT);
-            return false;
-        case HLC_PMODE_JOY:
-            hlc_pointing_mode_set(HLC_POINTING_JOYSTICK);
-            return false;
-        case HLC_PMODE_JCTR:
-            hlc_joystick_center_toggle();
-            return false;
-    }
-
-    return true;
-}
-
-// Used when the keymap does not define process_record_user() itself (json/Vial
-// keymaps). A keymap that does define it should call hlc_pointing_process_record().
-__attribute__((weak)) bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-    return hlc_pointing_process_record(keycode, record);
 }

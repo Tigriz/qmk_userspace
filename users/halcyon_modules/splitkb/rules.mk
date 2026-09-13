@@ -12,6 +12,7 @@ BACKLIGHT_DRIVER = pwm
 VPATH += $(USER_PATH)/splitkb/
 SRC += $(USER_PATH)/splitkb/halcyon.c
 SRC += $(USER_PATH)/splitkb/halcyon_buttons.c
+SRC += $(USER_PATH)/splitkb/hlc_pointing_mode.c
 HALCONFDIR += $(USER_PATH)/splitkb/halconf.h
 POST_CONFIG_H += $(USER_PATH)/splitkb/config.h
 

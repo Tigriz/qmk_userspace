@@ -4,17 +4,9 @@
 #include QMK_KEYBOARD_H
 
 // Pointing modes of the Halcyon Cirque module: trackpad, Lenovo-style
-// trackpoint, HID gamepad joystick. Only available on a trackpad build, the
-// keys are inert on any other module.
-#ifdef HLC_CIRQUE_TRACKPAD
-#    include "hlc_cirque_trackpad/hlc_cirque_trackpad.h"
-#else
-#    define PM_NEXT KC_NO
-#    define PM_PAD KC_NO
-#    define PM_TPT KC_NO
-#    define PM_JOY KC_NO
-#    define PM_JCTR KC_NO
-#endif
+// trackpoint, HID gamepad joystick. Every Halcyon firmware carries the mode and
+// its keycodes, so these keys work from whichever half holds the USB cable.
+#include "hlc_pointing_mode.h"
 
 enum layers {
     _QWERTY = 0,
@@ -256,11 +248,9 @@ const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
 #endif
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-#ifdef HLC_CIRQUE_TRACKPAD
     if (!hlc_pointing_process_record(keycode, record)) {
         return false;
     }
-#endif
 
     return true;
 }
