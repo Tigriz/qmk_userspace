@@ -27,9 +27,13 @@
 #define HSV_LAYER_UNDEF 0, 255, 255
 
 // Pointing mode of the Cirque module
-#define HSV_MODE_TRACKPAD 145, 235, 155
+#define HSV_MODE_TRACKPAD 145, 200, 255
 #define HSV_MODE_TRACKPOINT 17, 191, 245
 #define HSV_MODE_JOYSTICK 176, 120, 255
+
+// Hue shift applied to the mode line when the joystick is centred on the touch
+// point instead of on the pad. The label also gets a trailing star.
+#define HLC_MODE_RELATIVE_HUE_SHIFT 28
 
 extern painter_device_t lcd;
 extern painter_device_t lcd_surface;

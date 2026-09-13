@@ -188,6 +188,16 @@ void add_cell_cluster() {
 #define STATUS_PAD 3
 #define STATUS_LEFT 4
 
+typedef struct {
+    uint8_t h, s, v;
+} status_color_t;
+
+static const status_color_t mode_colors[HLC_POINTING_MODE_COUNT] = {
+    [HLC_POINTING_TRACKPAD]   = {HSV_MODE_TRACKPAD},
+    [HLC_POINTING_TRACKPOINT] = {HSV_MODE_TRACKPOINT},
+    [HLC_POINTING_JOYSTICK]   = {HSV_MODE_JOYSTICK},
+};
+
 static uint16_t status_line_y(uint8_t line) {
     return LCD_HEIGHT - (STATUS_LINES * status_font->line_height + 2 * STATUS_PAD) + STATUS_PAD + line * status_font->line_height;
 }
@@ -201,8 +211,9 @@ static void clear_status_line(uint8_t line) {
 }
 
 void update_display(void) {
-    static bool                drawn     = false;
-    static hlc_pointing_mode_t last_mode = HLC_POINTING_MODE_COUNT;
+    static bool                  drawn       = false;
+    static hlc_pointing_mode_t   last_mode   = HLC_POINTING_MODE_COUNT;
+    static hlc_joystick_center_t last_center = HLC_JOYSTICK_CENTER_PAD;
 
     if (!drawn) {
         status_font = qp_load_font_mem(font_gohufont);
@@ -244,20 +255,25 @@ void update_display(void) {
 
     // Line 1: what the Cirque module currently behaves as. The mode is owned by
     // the master and synced over, so this works from the half without the pad.
-    if (last_mode != hlc_pointing_mode() || !drawn) {
-        last_mode = hlc_pointing_mode();
+    if (last_mode != hlc_pointing_mode() || last_center != hlc_joystick_center() || !drawn) {
+        last_mode   = hlc_pointing_mode();
+        last_center = hlc_joystick_center();
+
+        const char    *name  = hlc_pointing_mode_name();
+        uint16_t       y     = status_line_y(1);
+        status_color_t color = mode_colors[last_mode < HLC_POINTING_MODE_COUNT ? last_mode : HLC_POINTING_TRACKPAD];
+
+        // A stick centred on the touch point rather than on the pad shifts the
+        // hue of the whole line and adds a star after the label.
+        bool relative = (last_mode == HLC_POINTING_JOYSTICK && last_center == HLC_JOYSTICK_CENTER_TOUCH);
+        if (relative) {
+            color.h += HLC_MODE_RELATIVE_HUE_SHIFT; // wraps around the colour wheel
+        }
 
         clear_status_line(1);
-        switch (last_mode) {
-            case HLC_POINTING_TRACKPOINT:
-                qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(1), status_font, hlc_pointing_mode_name(), HSV_MODE_TRACKPOINT, HSV_BLACK);
-                break;
-            case HLC_POINTING_JOYSTICK:
-                qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(1), status_font, hlc_pointing_mode_name(), HSV_MODE_JOYSTICK, HSV_BLACK);
-                break;
-            default:
-                qp_drawtext_recolor(lcd_surface, STATUS_LEFT, status_line_y(1), status_font, hlc_pointing_mode_name(), HSV_MODE_TRACKPAD, HSV_BLACK);
-                break;
+        qp_drawtext_recolor(lcd_surface, STATUS_LEFT, y, status_font, name, color.h, color.s, color.v, HSV_BLACK);
+        if (relative) {
+            qp_drawtext_recolor(lcd_surface, STATUS_LEFT + qp_textwidth(status_font, name) + 2, y, status_font, "*", color.h, color.s, color.v, HSV_BLACK);
         }
     }
 
